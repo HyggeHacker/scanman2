@@ -242,3 +242,4 @@ def drop_table(tablename):
 			c.execute(f"DROP TABLE {tablename}")
 	except sqlite3.OperationalError as e:
 		pass
+	
