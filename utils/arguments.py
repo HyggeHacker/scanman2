@@ -88,6 +88,11 @@ group3.add_argument('-ewr', '--ewreport', dest='ew_report', type=str, required=F
 group4 = parser.add_argument_group('GetDomainController Arguments')
 group4.add_argument('-d', '--domain', dest='domain', type=str, help='Provide DomainName(s). **Enables GetDC.', nargs='+')
 group4.add_argument('-ns', '--nameserver', dest='nameserver', type=str, required=False, metavar='', help='Nameserver')
+group4.add_argument('-k', '--kerberos', dest='kerberos', action='store_true', help='Enable Kerberos attacks (requires -d/--domain)')
+group4.add_argument('-u', '--username', dest='username', type=str, required=False, help='Username for authentication')
+group4.add_argument('-p', '--password', dest='password', type=str, required=False, help='Password for authentication')
+group4.add_argument('-uf', '--userfile', dest='user_file', type=str, required=False, help='File containing usernames for AS-REP Roasting')
+group4.add_argument('-H', '--hash', dest='hashes', type=str, required=False, help='NTLM hashes for pass-the-hash authentication')
 
 # DEV
 # Argparse - return kwargs for the specific "Argparse Group".
