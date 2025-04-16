@@ -9,6 +9,7 @@ from utils import masscanner
 from utils import mkdir
 from utils import nmapper
 # from utils import nullsession
+from utils import kerberosattacker
 from utils import richard as r
 from utils import sqlite as db
 from utils import xmlparser
@@ -130,9 +131,9 @@ def remove_ansi(string):
 	return new_string
 
 
-def write_results(file_ext, directory, dictionary, dbquery):
+def write_results(file_ext, , dictionary, dbquery):
 	''' Write database results to a flatfile. 
-	arg(s)file_ext:str, dictionary:dict, directory:str, dbquery:funcobj '''
+	arg(s)file_ext:str, dictionary:dict, :str, dbquery:funcobj '''
 
 	for k, v in dictionary.items():
 		filepath = os.path.join(directory, f'{os.path.basename(k)}.{file_ext}')
