@@ -3,7 +3,7 @@
 ![Supported Python versions](https://img.shields.io/badge/python-3.9-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-ScanMan ioperates as a network reconnaissance and vulnerability scanner that combines multiple powerful security tools:
+ScanMan operates as a network reconnaissance and vulnerability scanner that combines multiple powerful security tools:
 
 - **Masscan**: For fast port discovery
 - **Nmap**: For vulnerability scanning via NSE scripts
